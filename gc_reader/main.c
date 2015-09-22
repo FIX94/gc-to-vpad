@@ -33,6 +33,8 @@ typedef void (*HIDCallback)(unsigned int handle,int error,unsigned char *p_buffe
 #define DEVICE_UNUSED 0
 #define DEVICE_USED 1
 
+static void my_read_cb(unsigned int handle, int error, unsigned char *buf, unsigned int bytes_transfered, void *p_user);
+static void my_write_cb(unsigned int handle, int error, unsigned char *buf, unsigned int bytes_transfered, void *p_user);
 static int my_attach_cb(HIDClient *p_client, HIDDevice *p_device, unsigned int attach);
 
 int _start(int argc, char *argv[]) {
@@ -92,6 +94,8 @@ struct my_cb_user {
 	unsigned int nsyshid_handle;
 	void *HIDRead;
 	void *HIDWrite;
+	void *VPADBASEGetMotorOnRemainingCount;
+	int rumblestatus;
 	unsigned int transfersize;
 };
 
@@ -104,8 +108,20 @@ static void my_read_cb(unsigned int handle, int error, unsigned char *buf, unsig
 		//copy inputted data into our mem and continue reading
 		dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2];
 		struct my_cb_user *usr = (struct my_cb_user*)p_user;
-		int(*HIDRead)(unsigned int handle, unsigned char *p_buffer, unsigned int buffer_length, HIDCallback hc, void *p_user) = usr->HIDRead;
-		HIDRead(handle, usr->buf, bytes_transfered, my_read_cb, usr);
+		int(*VPADBASEGetMotorOnRemainingCount)(int drc) = usr->VPADBASEGetMotorOnRemainingCount;
+		int currumblestatus = !!VPADBASEGetMotorOnRemainingCount(0);
+		if(currumblestatus != usr->rumblestatus)
+		{
+			usr->rumblestatus = currumblestatus;
+			usr->buf[0] = 0x11; usr->buf[1] = usr->rumblestatus; usr->buf[2] = 0; usr->buf[3] = 0; usr->buf[4] = 0;
+			int(*HIDWrite)(unsigned int handle, unsigned char *p_buffer, unsigned int buffer_length, HIDCallback hc, void *p_user) = usr->HIDWrite;
+			HIDWrite(handle, usr->buf, 5, my_write_cb, usr);
+		}
+		else
+		{
+			int(*HIDRead)(unsigned int handle, unsigned char *p_buffer, unsigned int buffer_length, HIDCallback hc, void *p_user) = usr->HIDRead;
+			HIDRead(handle, usr->buf, bytes_transfered, my_read_cb, usr);
+		}
 	}
 }
 
@@ -135,7 +151,7 @@ static int my_attach_cb(HIDClient *p_client, HIDDevice *p_device, unsigned int a
 		usr->buf = buf;
 		//get nsyshid handle
 		unsigned int nsyshid_handle;
-		unsigned int tmpstr[8];
+		unsigned int tmpstr[12];
 		tmpstr[0] = 0x6E737973; tmpstr[1] = 0x68696400;
 		OSDynLoad_Acquire((char*)tmpstr, &nsyshid_handle);
 		usr->nsyshid_handle = nsyshid_handle;
@@ -144,6 +160,14 @@ static int my_attach_cb(HIDClient *p_client, HIDDevice *p_device, unsigned int a
 		OSDynLoad_FindExport(usr->nsyshid_handle,0,(char*)tmpstr,&usr->HIDRead);
 		tmpstr[0] = 0x48494457; tmpstr[1] = 0x72697465; tmpstr[2] = 0;
 		OSDynLoad_FindExport(usr->nsyshid_handle,0,(char*)tmpstr,&usr->HIDWrite);
+		//set up rumble
+		usr->rumblestatus = 0;
+		unsigned int vpadbase_handle;
+		tmpstr[0] = 0x76706164; tmpstr[1] = 0x62617365; tmpstr[2] = 0;
+		OSDynLoad_Acquire((char*)tmpstr, &vpadbase_handle);
+		tmpstr[0] = 0x56504144; tmpstr[1] = 0x42415345; tmpstr[2] = 0x4765744D; tmpstr[3] = 0x6F746F72; tmpstr[4] = 0x4F6E5265;
+		tmpstr[5] = 0x6D61696E; tmpstr[6] = 0x696E6743; tmpstr[7] = 0x6F756E74; tmpstr[8] = 0;
+		OSDynLoad_FindExport(vpadbase_handle,0,(char*)tmpstr,&usr->VPADBASEGetMotorOnRemainingCount);
 		//write the adapter init value starting the chain
 		int(*HIDWrite)(unsigned int handle, unsigned char *p_buffer, unsigned int buffer_length, HIDCallback hc, void *p_user) = usr->HIDWrite;
 		HIDWrite(p_device->handle, usr->buf, 1, my_write_cb, usr);
