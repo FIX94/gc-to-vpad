@@ -98,4 +98,3 @@ struct bss_t {
 };
 
 extern char PadMemLoc;
-extern char PadMemLocW;

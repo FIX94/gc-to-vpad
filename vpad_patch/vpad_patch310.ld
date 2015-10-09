@@ -11,7 +11,6 @@ SECTIONS {
 }
 
 PROVIDE(PadMemLoc = 0x011D2FFC);
-PROVIDE(PadMemLocW = 0xBD1D2FFC);
 
 PROVIDE(ver = 310);
 

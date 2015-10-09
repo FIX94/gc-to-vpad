@@ -44,6 +44,15 @@ int _start(int argc, char *argv[]) {
 	tmpstr[0] = 0x636F7265; tmpstr[1] = 0x696E6974; tmpstr[2] = 0; 
 	OSDynLoad_Acquire((char*)tmpstr, &coreinit_handle);
 
+	//OSEffectiveToPhysical for writing pad location
+	unsigned int*(*OSEffectiveToPhysical)(unsigned int *val);
+	tmpstr[0]=0x4F534566; tmpstr[1]=0x66656374; tmpstr[2]=0x69766554;
+	tmpstr[3]=0x6F506879; tmpstr[4]=0x73696361; tmpstr[5]=0x6C000000;
+	OSDynLoad_FindExport(coreinit_handle,0,(char*)tmpstr,&OSEffectiveToPhysical);
+	unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((unsigned int*)(&PadMemLoc));
+	unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((unsigned int*)0xA0000000);
+	unsigned int *PadMemLocW = (unsigned int*)(0xA0000000 + (physPadLoc - physWriteLoc));
+
 	//get OSAllocFromSystem and get 12 bytes for pad
 	void*(*OSAllocFromSystem)(unsigned int size, int align);
 	tmpstr[0] = 0x4F53416C; tmpstr[1] = 0x6C6F6346; tmpstr[2] = 0x726F6D53; tmpstr[3] = 0x79737465; tmpstr[4] = 0x6D000000;   
@@ -51,7 +60,7 @@ int _start(int argc, char *argv[]) {
 
 	unsigned int *padreadmem = OSAllocFromSystem(12,4); //safe mem
 	padreadmem[0] = 0; padreadmem[1] = 0; padreadmem[2] = 0;
-	*(unsigned int*)(&PadMemLocW) = (unsigned int)padreadmem; //UGLY 
+	*PadMemLocW = (unsigned int)padreadmem; //UGLY 
 
 	//get OSFreeToSystem for later usage
 	void(*OSFreeToSystem)(void *ptr);
@@ -80,7 +89,7 @@ int _start(int argc, char *argv[]) {
 	int ret = main(argc, argv);
 
 	//stop HID reads before quit
-	*(unsigned int*)(&PadMemLocW) = 0;
+	*PadMemLocW = 0;
 	OSFreeToSystem(padreadmem);
 
 	HIDDelClient(fd);

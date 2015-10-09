@@ -91,11 +91,9 @@ void _start()
 	while(t1--) ;
 
     /* Make sure the kernel exploit has been run */
-#if (VER<410)
-    if (OSEffectiveToPhysical((void *)0xa0000000) != (void *)0x30000000)
-#else
-	if (OSEffectiveToPhysical((void *)0xa0000000) != (void *)0x31000000)
-#endif
+	if( OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x10000000 &&
+        OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x30000000 &&
+	    OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x31000000 )
 	{
         OSFatal("You must run ksploit before installing GC to VPAD.");
     }
@@ -119,7 +117,11 @@ void _start()
 		DCFlushRange((void*)(0x01018940+0xBC000000), 0x20);
 		ICInvalidateRange((void*)(0x01018940+0xBC000000), 0x20);
 
-		*((uint32_t *)(0x011D2FFC+0xBC000000)) = 0; //IMPORTANT
+		/* Make sure to start with no location yet */
+		unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((void*)0x011D2FFC);
+		unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((void*)0xA0000000);
+		unsigned int *PadMemLocW = (unsigned int*)(0xA0000000 + (physPadLoc - physWriteLoc));
+		*PadMemLocW = 0; //IMPORTANT
 
         /* Install vpad patch */
 		memcpy((void*)(0x011D3000+0xBC000000), vpad_patch_text_bin, vpad_patch_text_bin_len);
@@ -142,7 +144,11 @@ void _start()
 		DCFlushRange((void*)(0x0101C540+0xA0000000), 0x20);
 		ICInvalidateRange((void*)(0x0101C540+0xA0000000), 0x20);
 
-		*((uint32_t *)(0x011DDFFC+0xA0000000)) = 0; //IMPORTANT
+		/* Make sure to start with no location yet */
+		unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((void*)0x011DDFFC);
+		unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((void*)0xA0000000);
+		unsigned int *PadMemLocW = (unsigned int*)(0xA0000000 + (physPadLoc - physWriteLoc));
+		*PadMemLocW = 0; //IMPORTANT
 
         /* Install vpad patch */
 		memcpy((void*)(0x011DE000+0xA0000000), vpad_patch_text_bin, vpad_patch_text_bin_len);
