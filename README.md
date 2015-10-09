@@ -12,7 +12,8 @@ It just works like you would expect for the most part except for Z, holding down
 This only patches VPADRead so not every game is supported.  
 As of right now the installer only supports 3.1.0 and 5.3.2. If you happen to have another firmware and want it ported you might open up a new issue on this page.  
 The way I internally share memory can break newer WiiU games (Splatoon).  
-The gamepad needs to be on at all times, also screen savers and console shutdowns will happen because the gamecube inputs are not detected officially by the system.
+The gamepad needs to be on at all times, also screen savers and console shutdowns will happen because the gamecube inputs are not detected officially by the system.  
+To get around the screen saver and console shutdown make sure to disable burn-in reduction and auto shutdown in your wiiu settings.
 
 # Manual Compiling
 Go into the gc_reader and vpad_patch folders respectively with a cmd and run make.  
