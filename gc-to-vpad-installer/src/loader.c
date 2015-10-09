@@ -1,9 +1,18 @@
 #include "loader.h"
 
+#define RW_MEM_MAP 0xA0000000
 #if (VER==310)
+#define GC_READER_ADDR 0x011D2000
+#define PAD_LOC_ADDR 0x011D2FFC
+#define VPAD_PATCH_ADDR 0x011D3000
+#define MAIN_JMP_ADDR 0x0101894C
 #include "vpad_patch310.h"
 #include "gc_reader310.h"
-#else
+#else //if(VER==532)
+#define GC_READER_ADDR 0x011DD000
+#define PAD_LOC_ADDR 0x011DDFFC
+#define VPAD_PATCH_ADDR 0x011DE000
+#define MAIN_JMP_ADDR 0x0101C55C
 #include "vpad_patch532.h"
 #include "gc_reader532.h"
 #endif
@@ -91,9 +100,9 @@ void _start()
 	while(t1--) ;
 
     /* Make sure the kernel exploit has been run */
-	if( OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x10000000 &&
-        OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x30000000 &&
-	    OSEffectiveToPhysical((void *)0xA0000000) != (void *)0x31000000 )
+	if( OSEffectiveToPhysical((void *)RW_MEM_MAP) != (void *)0x10000000 &&
+        OSEffectiveToPhysical((void *)RW_MEM_MAP) != (void *)0x30000000 &&
+	    OSEffectiveToPhysical((void *)RW_MEM_MAP) != (void *)0x31000000 )
 	{
         OSFatal("You must run ksploit before installing GC to VPAD.");
     }
@@ -106,61 +115,44 @@ void _start()
 		readmove -= (0x24/4); //VPADRead: mr r3, r31; our hook
 		if(*readmove != 0x7FE3FB78) OSFatal("Something with the VPAD RPL is different!");
 		unsigned int topatch = (unsigned int)readmove;
-#if (VER==310)
+
+		/* Our main writable area */
+		unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((void*)RW_MEM_MAP);
+
 		/* Install gc reader */
-		memcpy((void*)(0x011D2000+0xBC000000), gc_reader_text_bin, gc_reader_text_bin_len);
-		DCFlushRange((void*)(0x011D2000+0xBC000000), gc_reader_text_bin_len);
-		ICInvalidateRange((void*)(0x011D2000+0xBC000000), gc_reader_text_bin_len);
+		unsigned int phys_gc_reader_loc = (unsigned int)OSEffectiveToPhysical((void*)GC_READER_ADDR);
+		void *gc_reader_loc = (unsigned int*)(RW_MEM_MAP + (phys_gc_reader_loc - physWriteLoc));
+
+		memcpy(gc_reader_loc, gc_reader_text_bin, gc_reader_text_bin_len);
+		DCFlushRange(gc_reader_loc, gc_reader_text_bin_len);
+		ICInvalidateRange(gc_reader_loc, gc_reader_text_bin_len);
 
 		/* Patch start main */
-		*((uint32_t *)(0x0101894C+0xBC000000)) = doBL(0x011D2000,0x0101894C);
-		DCFlushRange((void*)(0x01018940+0xBC000000), 0x20);
-		ICInvalidateRange((void*)(0x01018940+0xBC000000), 0x20);
+		unsigned int phys_main_jmp_loc = (unsigned int)OSEffectiveToPhysical((void*)MAIN_JMP_ADDR);
+		void *main_jmp_loc = (unsigned int*)(RW_MEM_MAP + (phys_main_jmp_loc - physWriteLoc));
+
+		*((uint32_t *)main_jmp_loc) = doBL(GC_READER_ADDR, MAIN_JMP_ADDR);
+		DCFlushRange(ALIGN_BACKWARD(main_jmp_loc, 32), 0x20);
+		ICInvalidateRange(ALIGN_BACKWARD(main_jmp_loc, 32), 0x20);
 
 		/* Make sure to start with no location yet */
-		unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((void*)0x011D2FFC);
-		unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((void*)0xA0000000);
-		unsigned int *PadMemLocW = (unsigned int*)(0xA0000000 + (physPadLoc - physWriteLoc));
+		unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((void*)PAD_LOC_ADDR);
+		unsigned int *PadMemLocW = (unsigned int*)(RW_MEM_MAP + (physPadLoc - physWriteLoc));
 		*PadMemLocW = 0; //IMPORTANT
 
         /* Install vpad patch */
-		memcpy((void*)(0x011D3000+0xBC000000), vpad_patch_text_bin, vpad_patch_text_bin_len);
-		DCFlushRange((void*)(0x011D3000+0xBC000000), vpad_patch_text_bin_len);
-		ICInvalidateRange((void*)(0x011D3000+0xBC000000), vpad_patch_text_bin_len);
+		unsigned int phys_vpad_patch_loc = (unsigned int)OSEffectiveToPhysical((void*)VPAD_PATCH_ADDR);
+		void *vpad_patch_loc = (unsigned int*)(RW_MEM_MAP + (phys_vpad_patch_loc - physWriteLoc));
+		memcpy(vpad_patch_loc, vpad_patch_text_bin, vpad_patch_text_bin_len);
+		DCFlushRange(vpad_patch_loc, vpad_patch_text_bin_len);
+		ICInvalidateRange(vpad_patch_loc, vpad_patch_text_bin_len);
 
 		/* Patch VPADRead */
-		*((uint32_t *)(topatch+0xBC000000)) = doBL(0x011D3000,topatch);
-		unsigned int *faddr = (unsigned int*)ALIGN_BACKWARD((topatch+0xBC000000), 32);
-		DCFlushRange(faddr, 0x40);
-		ICInvalidateRange(faddr, 0x40);
-#else
-		/* Install gc reader */
-		memcpy((void*)(0x011DD000+0xA0000000), gc_reader_text_bin, gc_reader_text_bin_len);
-		DCFlushRange((void*)(0x011DD000+0xA0000000), gc_reader_text_bin_len);
-		ICInvalidateRange((void*)(0x011DD000+0xA0000000), gc_reader_text_bin_len);
-
-		/* Patch start main */
-		*((uint32_t *)(0x0101C55C+0xA0000000)) = doBL(0x011DD000,0x0101C55C);
-		DCFlushRange((void*)(0x0101C540+0xA0000000), 0x20);
-		ICInvalidateRange((void*)(0x0101C540+0xA0000000), 0x20);
-
-		/* Make sure to start with no location yet */
-		unsigned int physPadLoc = (unsigned int)OSEffectiveToPhysical((void*)0x011DDFFC);
-		unsigned int physWriteLoc = (unsigned int)OSEffectiveToPhysical((void*)0xA0000000);
-		unsigned int *PadMemLocW = (unsigned int*)(0xA0000000 + (physPadLoc - physWriteLoc));
-		*PadMemLocW = 0; //IMPORTANT
-
-        /* Install vpad patch */
-		memcpy((void*)(0x011DE000+0xA0000000), vpad_patch_text_bin, vpad_patch_text_bin_len);
-		DCFlushRange((void*)(0x011DE000+0xA0000000), vpad_patch_text_bin_len);
-		ICInvalidateRange((void*)(0x011DE000+0xA0000000), vpad_patch_text_bin_len);
-
-		/* Patch coreinit jump */
-		*((uint32_t *)(topatch+0xA0000000)) = doBL(0x011DE000,topatch);
-		unsigned int *faddr = (unsigned int*)ALIGN_BACKWARD(topatch+0xA0000000, 32);
-		DCFlushRange(faddr, 0x40);
-		ICInvalidateRange(faddr, 0x40);
-#endif
+		unsigned int phys_topatch_loc = (unsigned int)OSEffectiveToPhysical((void*)topatch);
+		unsigned int *topatch_loc = (unsigned int*)(RW_MEM_MAP + (phys_topatch_loc - physWriteLoc));
+		*topatch_loc = doBL(VPAD_PATCH_ADDR, topatch);
+		DCFlushRange(ALIGN_BACKWARD(topatch_loc, 32), 0x20);
+		ICInvalidateRange(ALIGN_BACKWARD(topatch_loc, 32), 0x20);
 
         /* The fix for Splatoon and such */
 		//broken with this atm because we still use it
